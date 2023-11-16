@@ -32,6 +32,37 @@ async function run() {
       .db("bistroDB")
       .collection("reviewsCollection");
     const cartCollection = client.db("bistroDB").collection("cartCollection");
+
+    // jwt related api
+
+    app.post("/jwt", async (req, res) => {
+      const user = req.body;
+      const token = jwt.sign(user, process.env.ACCESS_TOKEN, {
+        expiresIn: "365d",
+      });
+      res.send({ token });
+    });
+
+    // our middleware
+    const verifyToken = (req, res, next) => {
+      if (!req.headers.authorization) {
+        return res.status(401).send({ message: "forbidden" });
+      }
+      const token = req.headers.authorization.split(" ")[1];
+      if (!token) {
+        return res.status(401).send({ message: "forbidden" });
+      }
+
+      // token verify
+      jwt.verify(token, process.env.ACCESS_TOKEN, (err, decoded) => {
+        if (err) {
+          return res.status(401).send({ message: "UnAuthorized" });
+        }
+        req.user = decoded;
+        next();
+      });
+    };
+
     // menu related api
     app.get("/menu", async (req, res) => {
       const result = await menuCollection.find().toArray();
@@ -39,7 +70,7 @@ async function run() {
     });
 
     // users related api
-    app.get("/users", async (req, res) => {
+    app.get("/users", verifyToken, async (req, res) => {
       const result = await userCollection.find().toArray();
       res.send(result);
     });
