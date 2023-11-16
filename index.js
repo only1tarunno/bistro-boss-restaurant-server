@@ -49,10 +49,6 @@ async function run() {
         return res.status(401).send({ message: "forbidden" });
       }
       const token = req.headers.authorization.split(" ")[1];
-      if (!token) {
-        return res.status(401).send({ message: "forbidden" });
-      }
-
       // token verify
       jwt.verify(token, process.env.ACCESS_TOKEN, (err, decoded) => {
         if (err) {
@@ -78,6 +74,12 @@ async function run() {
     // menu related api
     app.get("/menu", async (req, res) => {
       const result = await menuCollection.find().toArray();
+      res.send(result);
+    });
+
+    app.post("/menu", verifyToken, verifyAdmin, async (req, res) => {
+      const item = req.body;
+      const result = await menuCollection.insertOne(item);
       res.send(result);
     });
 
