@@ -33,6 +33,9 @@ async function run() {
       .db("bistroDB")
       .collection("reviewsCollection");
     const cartCollection = client.db("bistroDB").collection("cartCollection");
+    const paymentCollection = client
+      .db("bistroDB")
+      .collection("paymentCollection");
 
     // jwt related api
 
@@ -213,6 +216,33 @@ async function run() {
       res.send({
         clientSecret: paymentIntent.client_secret,
       });
+    });
+
+    app.get("/payments/:email", verifyToken, async (req, res) => {
+      const useremail = req.params.email;
+      const query = { email: useremail };
+      if (useremail !== req.user.email) {
+        return res.status(403).send({ message: "forbidden" });
+      }
+      const result = await paymentCollection.find(query).toArray();
+      res.send(result);
+    });
+
+    app.post("/payments", async (req, res) => {
+      const payment = req.body;
+
+      const result = await paymentCollection.insertOne(payment);
+
+      // carefully delete each item on the cart
+      const query = {
+        _id: {
+          $in: payment.cartIds.map((id) => new ObjectId(id)),
+        },
+      };
+
+      const deleteResult = await cartCollection.deleteMany(query);
+
+      res.send({ result, deleteResult });
     });
 
     // Send a ping to confirm a successful connection
