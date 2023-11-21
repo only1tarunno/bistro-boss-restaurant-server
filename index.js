@@ -120,6 +120,7 @@ async function run() {
       res.send(result);
     });
 
+    // check admin
     app.get("/users/admin/:email", verifyToken, async (req, res) => {
       const email = req.params.email;
       if (email !== req.user.email) {
@@ -206,7 +207,7 @@ async function run() {
       const { price } = req.body;
       const ammount = parseInt(price * 100);
       if (ammount < 1) return;
-      console.log(ammount);
+
       const paymentIntent = await stripe.paymentIntents.create({
         amount: ammount,
         currency: "usd",
@@ -245,11 +246,92 @@ async function run() {
       res.send({ result, deleteResult });
     });
 
+    // stats or analytics
+    app.get("/admin-stats", verifyToken, verifyAdmin, async (req, res) => {
+      const users = await userCollection.estimatedDocumentCount();
+      const menuItems = await menuCollection.estimatedDocumentCount();
+      const orders = await paymentCollection.estimatedDocumentCount();
+
+      // // this is not best way
+      // const payments = await paymentCollection.find().toArray();
+      // const revenue = payments.reduce(
+      //   (total, payment) => total + parseFloat(payment.price),
+      //   0
+      // );
+
+      const result = await paymentCollection
+        .aggregate([
+          {
+            $group: {
+              _id: null,
+              totalrevenue: {
+                $sum: "$price",
+              },
+            },
+          },
+        ])
+        .toArray();
+
+      const revenue = result.length > 0 ? result[0].totalrevenue : 0;
+
+      res.send({ users, menuItems, orders, revenue });
+    });
+
+    // using aggregate pipeline for revenue
+    app.get("/order-stats", verifyToken, verifyAdmin, async (req, res) => {
+      const result = await paymentCollection
+        .aggregate([
+          {
+            $unwind: "$menuItemIds",
+          },
+          {
+            $lookup: {
+              from: "menuCollection",
+              let: { menuItemId: { $toObjectId: "$menuItemIds" } }, // Convert menuItemIds to ObjectId
+              pipeline: [
+                {
+                  $match: {
+                    $expr: {
+                      $eq: ["$$menuItemId", "$_id"], // Compare converted menuItemIds with _id in menuCollection
+                    },
+                  },
+                },
+              ],
+              as: "menuItems",
+            },
+          },
+          {
+            $unwind: "$menuItems",
+          },
+          {
+            $group: {
+              _id: "$menuItems.category",
+              quantity: {
+                $sum: 1,
+              },
+              totalrevenue: {
+                $sum: "$menuItems.price",
+              },
+            },
+          },
+          {
+            $project: {
+              _id: 0,
+              category: "$_id",
+              quantity: "$quantity",
+              totalrevenue: "$totalrevenue",
+            },
+          },
+        ])
+        .toArray();
+      res.send(result);
+    });
+
     // Send a ping to confirm a successful connection
-    await client.db("admin").command({ ping: 1 });
-    console.log(
-      "Pinged your deployment. You successfully connected to MongoDB!"
-    );
+    // await client.db("admin").command({ ping: 1 });
+    // console.log(
+    //   "Pinged your deployment. You successfully connected to MongoDB!"
+    // );
   } finally {
     // Ensures that the client will close when you finish/error
     // await client.close();
